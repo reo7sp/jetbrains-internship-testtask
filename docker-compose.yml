@@ -1,4 +1,4 @@
-version: '3.0'
+version: "3.0"
 
 services:
   app:
@@ -8,15 +8,16 @@ services:
       - "8000:8000"
     environment:
       - REDIS_ADDR=redis:6379
-      - REDIS_PASSWORD=o6GKTvzch8
+      - REDIS_PASSWORD=vr6aQH4PdmyVxhn7jdJFQCV9
     depends_on:
       - redis
 
   redis:
     image: redis
+    restart: always
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --requirepass o6GKTvzch8
+    command: redis-server --appendonly yes --requirepass vr6aQH4PdmyVxhn7jdJFQCV9
 
 volumes:
     redis_data:
