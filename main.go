@@ -14,7 +14,7 @@ func getConfigOrDie() (string, string, int, uint16) {
 	}
 
 	// redis password
-	redisPassword := os.Getenv("REDIS_ADDR")
+	redisPassword := os.Getenv("REDIS_PASSWORD")
 
 	// redis db
 	redisDbStr := os.Getenv("REDIS_DB")
