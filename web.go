@@ -6,99 +6,64 @@ import (
 	"github.com/go-redis/redis"
 	"strings"
 	"strconv"
-	"time"
 	"encoding/json"
 )
 
-func InitWeb(redisClient *redis.Client) (error) {
+func InitWeb(port uint16, redisClient *redis.Client) (error) {
 	partialHandleLessons := func(w http.ResponseWriter, r *http.Request) {
 		handleLessons(redisClient, w, r)
 	}
 	http.HandleFunc("/lessons/", partialHandleLessons)
 
-	err := http.ListenAndServe(":8000", nil)
+	addr := fmt.Sprintf(":%d", port)
+	err := http.ListenAndServe(addr, nil)
 	return err
 }
 
-func printError(w http.ResponseWriter, err error, tag string, status int) {
-	fmt.Printf("error: %s: %s\n", tag, err)
-	w.WriteHeader(status)
-	fmt.Fprintf(w, "error: %s: %s", tag, err)
+func handleLessons(redisClient *redis.Client, w http.ResponseWriter, r *http.Request) {
+	// path parse
+	pk, err := extractPkFromPath(r.URL.Path)
+	if err != nil {
+		printError(w, err)
+		return
+	}
+
+	// fetch lesson
+	lesson, err := FetchStepikLesson(pk, redisClient)
+	if err != nil {
+		printError(w, err)
+		return
+	}
+
+	// send response
+	err = sendStepIdsAsJson(w, lesson.TextStepIds)
+	if err != nil {
+		printError(w, err)
+		return
+	}
 }
 
-func handleLessons(redisClient *redis.Client, w http.ResponseWriter, r *http.Request) {
-	path := strings.SplitN(r.URL.Path, "/", 3)
-	pk, err := strconv.ParseUint(path[2], 10, 64)
+func printError(w http.ResponseWriter, err error) {
+	fmt.Printf("error: %s\n", err)
+	w.WriteHeader(http.StatusBadRequest)
+	fmt.Fprintf(w, "error: %s", err)
+}
+
+func extractPkFromPath(path string) (uint64, error) {
+	pathParts := strings.SplitN(path, "/", 3)
+	pk, err := strconv.ParseUint(pathParts[2], 10, 64)
 	if err != nil {
-		printError(w, err, "path parse", http.StatusNotFound)
-		return
+		return pk, err
 	}
+	return pk, nil
+}
 
-	apiResp, err := FetchStepikApiLesson(pk)
+func sendStepIdsAsJson(w http.ResponseWriter, stepIds []uint64) error {
+	resp, err := json.Marshal(stepIds)
 	if err != nil {
-		printError(w, err, "stepik api: fetch lesson", http.StatusNotFound)
-		return
+		return err
 	}
-
-	timeLayout := "2006-01-02T15:04:05Z"
-	updateDate, err := time.Parse(timeLayout, apiResp.Lessons[0].UpdateDate)
-	if err != nil {
-		printError(w, err, "parse time", http.StatusInternalServerError)
-		return
-	}
-	updateDateUnix := uint64(updateDate.Unix())
-
-	cacheUpdateDateUnix, err := FetchCacheLessonUpdateTime(redisClient, pk)
-	if err != nil {
-		fmt.Printf("warning: cache: fetch lesson update time: %s", http.StatusInternalServerError)
-		cacheUpdateDateUnix = 0
-	}
-
-	isCacheValid := updateDateUnix <= cacheUpdateDateUnix
-	if isCacheValid {
-		stepIds, err := FetchCacheLessonTextStepsIds(redisClient, pk)
-		if err != nil {
-			printError(w, err, "cache: fetch lesson text steps", http.StatusInternalServerError)
-			return
-		}
-
-		resp, err := json.Marshal(stepIds)
-		if err != nil {
-			printError(w, err, "json: marshal cached step ids", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(resp)
-	} else {
-		var textStepIds []uint64
-		for _, stepId := range apiResp.Lessons[0].Steps {
-			apiResp, err := FetchStepikApiStep(stepId)
-			if err != nil {
-				printError(w, err, "stepik api: fetch step", http.StatusInternalServerError)
-				return
-			}
-			if apiResp.Steps[0].Block.Name == "text" {
-				textStepIds = append(textStepIds, stepId)
-			}
-		}
-
-		err := SaveCacheLessonTextStepsIds(redisClient, pk, textStepIds)
-		if err != nil {
-			printError(w, err, "cache: save lesson text steps", http.StatusInternalServerError)
-			return
-		}
-		err = SaveCacheLessonUpdateTime(redisClient, pk, updateDateUnix)
-		if err != nil {
-			printError(w, err, "cache: save lesson update time", http.StatusInternalServerError)
-			return
-		}
-
-		resp, err := json.Marshal(textStepIds)
-		if err != nil {
-			printError(w, err, "json: marshal step ids", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(resp)
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(resp)
+	return nil
 }

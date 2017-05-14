@@ -8,7 +8,6 @@ import (
 )
 
 type StepikApiLesson struct {
-	Id         uint64 `json:"id"`
 	Steps      []uint64 `json:"steps"`
 	UpdateDate string `json:"update_date"`
 }
@@ -38,7 +37,6 @@ type StepikApiStepBlock struct {
 }
 
 type StepikApiStep struct {
-	Id    uint64 `json:"id"`
 	Block StepikApiStepBlock `json:"block"`
 }
 
